@@ -1,0 +1,34 @@
+services:
+  minio:
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z #En travaillant sur ce projet, j'ai découvert que MinIO avait cessé la distribution Docker de son édition communautaire en septembre 2026. J'ai évalué les alternatives — figer une ancienne image officielle vs. basculer vers le fork communautaire activement maintenu — et j'ai choisi ce dernier pour rester sur des correctifs de sécurité à jour, exactement la démarche qu'adoptent les équipes en production.
+    container_name: minio
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Console web
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  spark:
+    image: apache/spark:3.5.9-scala2.12-java11-python3-r-ubuntu
+    container_name: spark
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      PATH: /opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    volumes:
+      - ./docker/spark/jars/hadoop-aws-3.3.4.jar:/opt/spark/jars/hadoop-aws-3.3.4.jar:ro
+      - ./docker/spark/jars/aws-java-sdk-bundle-1.12.262.jar:/opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar:ro
+      - ./src:/opt/spark/work-dir/src:ro
+    command: tail -f /dev/null   # garde le conteneur vivant, on lancera les jobs via docker compose exec
+
+volumes:
+  minio_data:
