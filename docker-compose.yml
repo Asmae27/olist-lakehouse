@@ -17,7 +17,9 @@ services:
       timeout: 10s
       retries: 3
   spark:
-    image: apache/spark:3.5.9-scala2.12-java11-python3-r-ubuntu
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
     container_name: spark
     depends_on:
        minio:
