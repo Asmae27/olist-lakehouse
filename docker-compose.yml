@@ -20,15 +20,20 @@ services:
     image: apache/spark:3.5.9-scala2.12-java11-python3-r-ubuntu
     container_name: spark
     depends_on:
-      minio:
+       minio:
         condition: service_healthy
     environment:
       PATH: /opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PYTHONPATH: /opt/spark/work-dir/src
     volumes:
       - ./docker/spark/jars/hadoop-aws-3.3.4.jar:/opt/spark/jars/hadoop-aws-3.3.4.jar:ro
       - ./docker/spark/jars/aws-java-sdk-bundle-1.12.262.jar:/opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar:ro
+      - ./docker/spark/jars/delta-spark_2.12-3.3.3.jar:/opt/spark/jars/delta-spark_2.12-3.3.3.jar:ro
+      - ./docker/spark/jars/delta-storage-3.3.3.jar:/opt/spark/jars/delta-storage-3.3.3.jar:ro
       - ./src:/opt/spark/work-dir/src:ro
-    command: tail -f /dev/null   # garde le conteneur vivant, on lancera les jobs via docker compose exec
+      - ./data:/opt/spark/work-dir/data:ro
+    command: tail -f /dev/null
 
 volumes:
   minio_data:
+
