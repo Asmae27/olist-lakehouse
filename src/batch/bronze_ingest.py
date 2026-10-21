@@ -1,5 +1,22 @@
 from common.spark_session import get_spark_session
 from pyspark.sql.types import StructType, StructField, StringType
+from pyspark.sql import functions as F
+
+import boto3
+from botocore.client import Config
+
+def ensure_buckets_exist(bucket_names):
+    s3 = boto3.client(
+        "s3", endpoint_url="http://minio:9000",
+        aws_access_key_id="minioadmin", aws_secret_access_key="minioadmin123",
+        config=Config(signature_version="s3v4"), region_name="us-east-1",
+    )
+    existing = {b["Name"] for b in s3.list_buckets()["Buckets"]}
+    for name in bucket_names:
+        if name not in existing:
+            s3.create_bucket(Bucket=name)
+
+
 
 TABLES = {
     "olist_orders_dataset.csv": "orders",
@@ -45,7 +62,18 @@ def ingest_standard_csv(spark, csv_filename: str, table_name: str) -> int:
     return row_count
 
 
+# Dans bronze_ingest.py — remplace ingest_order_reviews par cette version
+
+# Garde-fou : avec la config multiLine + escape correcte, aucune ligne
+# n'est actuellement corrompue (confirmé : 0 lignes). Cette logique reste
+# en place en prévision d'une future source de données moins propre
+# (nouveau dataset, flux streaming) plutôt que d'être du code mort.
+
 def ingest_order_reviews(spark, csv_filename: str, table_name: str) -> int:
+    """Lit order_reviews avec gestion des guillemets internes doublés et des
+    retours à la ligne dans les commentaires. Les lignes mal formées sont
+    conservées dans quarantine/order_reviews_malformed_csv/ plutôt
+    qu'exclues silencieusement."""
     df = (
         spark.read
         .option("header", "true")
@@ -58,21 +86,29 @@ def ingest_order_reviews(spark, csv_filename: str, table_name: str) -> int:
         .csv(f"{DATA_DIR}/{csv_filename}")
     )
 
-    total_count = df.count()
-    print(f"  [DEBUG] Total lignes lues (avant filtrage) : {total_count}")
+    malformed_df = (
+        df.filter(df["_corrupt_record"].isNotNull())
+        .select("_corrupt_record")
+        .withColumn("quarantine_reason", F.array(F.lit("malformed_csv_row")))
+        .withColumn("source_file", F.lit(csv_filename))
+    )
+    malformed_count = malformed_df.count()
 
-    corrupt_count = df.filter(df["_corrupt_record"].isNotNull()).count()
-    print(f"  [DEBUG] Lignes corrompues détectées : {corrupt_count}")
+    if malformed_count > 0:
+        print(f"  ATTENTION : {malformed_count} lignes mal formées dans {csv_filename} "
+              f"-> conservées dans quarantine/order_reviews_malformed_csv/")
+        malformed_df.write.format("delta").mode("overwrite").save(
+            "s3a://quarantine/order_reviews_malformed_csv/"
+        )
 
     clean_df = df.filter(df["_corrupt_record"].isNull()).drop("_corrupt_record")
     row_count = clean_df.count()
-    print(f"  [DEBUG] Lignes propres (à écrire) : {row_count}")
-
     clean_df.write.format("delta").mode("overwrite").save(f"s3a://bronze/{table_name}/")
     return row_count
 
 
 def main():
+    ensure_buckets_exist(["bronze", "quarantine"])
     spark = get_spark_session("bronze-ingest")
 
     for csv_filename, table_name in TABLES.items():

@@ -16,6 +16,20 @@ DATA_QUALITY_RULES = {
         ("order_id_not_null", lambda: F.col("order_id").isNotNull()),
         ("review_score_not_null", lambda: F.col("review_score").isNotNull()),
     ],
+    "customers": [
+        ("customer_id_not_null", lambda: F.col("customer_id").isNotNull()),
+    ],
+    "order_items": [
+        ("order_id_not_null", lambda: F.col("order_id").isNotNull()),
+        ("product_id_not_null", lambda: F.col("product_id").isNotNull()),
+        ("seller_id_not_null", lambda: F.col("seller_id").isNotNull()),
+    ],
+    "products": [
+        ("product_id_not_null", lambda: F.col("product_id").isNotNull()),
+    ],
+    "sellers": [
+        ("seller_id_not_null", lambda: F.col("seller_id").isNotNull()),
+    ],
 }
 
 
@@ -89,7 +103,7 @@ def process_table(spark, table_name: str):
 
 
 def main():
-    ensure_buckets_exist(["silver", "quarantine"])
+    ensure_buckets_exist(["silver", "quarantine", "gold"])
     spark = get_spark_session("silver-quarantine")
     for table_name in DATA_QUALITY_RULES:
         process_table(spark, table_name)
