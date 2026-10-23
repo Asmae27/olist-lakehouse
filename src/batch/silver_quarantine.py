@@ -3,6 +3,7 @@ from botocore.client import Config
 
 from common.spark_session import get_spark_session
 from pyspark.sql import functions as F
+from common.storage import ensure_buckets_exist
 
 # Chaque règle est une fonction (lambda), pas une expression déjà construite.
 # Elle n'est évaluée qu'une fois appelée, donc après que la SparkSession existe.
@@ -33,26 +34,6 @@ DATA_QUALITY_RULES = {
 }
 
 
-def ensure_buckets_exist(bucket_names):
-    """Crée les buckets MinIO manquants avant toute écriture Spark.
-    S3 (et MinIO) exige qu'un bucket existe avant d'y écrire quoi que ce
-    soit — contrairement à un système de fichiers classique qui crée les
-    dossiers manquants à la volée."""
-    s3 = boto3.client(
-        "s3",
-        endpoint_url="http://minio:9000",
-        aws_access_key_id="minioadmin",
-        aws_secret_access_key="minioadmin123",
-        config=Config(signature_version="s3v4"),
-        region_name="us-east-1",
-    )
-    existing = {b["Name"] for b in s3.list_buckets()["Buckets"]}
-    for name in bucket_names:
-        if name not in existing:
-            s3.create_bucket(Bucket=name)
-            print(f"Bucket créé : {name}")
-        else:
-            print(f"Bucket déjà présent : {name}")
 
 
 def split_valid_and_quarantine(df, table_name: str):

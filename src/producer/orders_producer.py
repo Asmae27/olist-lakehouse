@@ -22,14 +22,12 @@ def on_delivery(err, msg):
         stats["ok"] += 1
 
 
-def load_orders(path, limit):
-    # utf-8-sig : tolère un éventuel BOM, qui collerait sinon un caractère
-    # invisible au nom de la première colonne (donc à la clé).
+def load_orders(path, skip, limit):
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
-    # Rejeu chronologique (les timestamps ISO se trient comme du texte).
     rows.sort(key=lambda r: r["order_purchase_timestamp"])
-    return rows[:limit] if limit else rows
+    end = skip + limit if limit else None
+    return rows[skip:end]
 
 
 def main():
@@ -38,6 +36,8 @@ def main():
                         help="nombre de commandes à envoyer (0 = toutes)")
     parser.add_argument("--rate", type=float, default=50.0,
                         help="messages par seconde (0 = pas de limite)")
+    parser.add_argument("--skip", type=int, default=0,
+                        help="ignore les N premières commandes (rejeu par fenêtres)")
     args = parser.parse_args()
 
     producer = Producer({
@@ -46,7 +46,7 @@ def main():
         "enable.idempotence": True,   # pas de doublon si un envoi est retenté
     })
 
-    orders = load_orders(CSV_PATH, args.limit)
+    orders = load_orders(CSV_PATH, args.skip, args.limit)
     interval = 1.0 / args.rate if args.rate > 0 else 0
     print(f"Envoi de {len(orders)} commandes vers {TOPIC} ({BROKER})")
 
