@@ -36,11 +36,11 @@ DATA_QUALITY_RULES = {
 
 
 
-def split_valid_and_quarantine(df, table_name: str):
+def split_valid_and_quarantine(df, table_name: str, extra_rules=None):
     """Source unique de vérité : applique chaque règle nommée, construit
     is_valid et quarantine_reason à partir des MÊMES conditions utilisées
     pour les statistiques. Aucune règle n'est écrite deux fois."""
-    rules = DATA_QUALITY_RULES[table_name]
+    rules = DATA_QUALITY_RULES[table_name] + (extra_rules or [])
 
     df_checked = df
     failure_reasons = []
