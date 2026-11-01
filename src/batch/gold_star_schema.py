@@ -109,22 +109,31 @@ def build_fact_order_items(spark):
 
 
 def validate(spark):
+    problems = []
     fact = read(spark, "gold", "fact_order_items")
     n_fact = fact.count()
     n_src = read(spark, "silver", "order_items").count()
     print(f"fact_order_items : {n_fact} lignes vs silver/order_items : {n_src} "
           f"(égalité : {n_fact == n_src})")
+    if n_fact != n_src:
+        problems.append(f"fact_order_items ({n_fact}) != silver/order_items ({n_src})")
 
     checks = [("customer_key", "dim_customers"), ("product_key", "dim_products"),
               ("seller_key", "dim_sellers"), ("purchase_date_key", "dim_date")]
     for key, dim in checks:
         dim_key = "date_key" if dim == "dim_date" else key
         dim_df = read(spark, "gold", dim).select(F.col(dim_key).alias(key))
-        orphans = fact.join(dim_df, key, "left_anti").count()  # les clés nulles comptent aussi
+        orphans = fact.join(dim_df, key, "left_anti").count()
         print(f"Orphelins {key} -> {dim} : {orphans}")
+        if orphans:
+            problems.append(f"{orphans} orphelins : {key} -> {dim}")
+
+    if problems:
+        raise RuntimeError("Contrôles Gold en échec : " + " ; ".join(problems))
 
 
 def main():
+    ensure_buckets_exist(["gold"])
     spark = get_spark_session("gold-star-schema")
     write_gold(build_dim_customers(spark), "dim_customers")
     write_gold(build_dim_products(spark), "dim_products")

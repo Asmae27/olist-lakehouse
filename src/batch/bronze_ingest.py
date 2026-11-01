@@ -50,6 +50,8 @@ def ingest_standard_csv(spark, csv_filename: str, table_name: str) -> int:
         .csv(f"{DATA_DIR}/{csv_filename}")
     )
     row_count = df.count()
+    if row_count == 0:
+        raise RuntimeError(f"{csv_filename} : 0 ligne lue, fichier absent ou illisible")
     df.write.format("delta").mode("overwrite").save(f"s3a://bronze/{table_name}/")
     return row_count
 
@@ -95,6 +97,8 @@ def ingest_order_reviews(spark, csv_filename: str, table_name: str) -> int:
 
     clean_df = df.filter(df["_corrupt_record"].isNull()).drop("_corrupt_record")
     row_count = clean_df.count()
+    if row_count == 0:
+        raise RuntimeError(f"{csv_filename} : 0 ligne lue, fichier absent ou illisible")
     clean_df.write.format("delta").mode("overwrite").save(f"s3a://bronze/{table_name}/")
     return row_count
 

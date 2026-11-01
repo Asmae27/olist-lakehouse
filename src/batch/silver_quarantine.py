@@ -67,6 +67,9 @@ def split_valid_and_quarantine(df, table_name: str, extra_rules=None):
     return df_valid, df_quarantine
 
 
+QUARANTINE_WARN_RATE = 0.05   # au-dessus : alerte dans les logs, sans faire échouer le job
+
+
 def process_table(spark, table_name: str):
     df = spark.read.format("delta").load(f"s3a://bronze/{table_name}/")
     total = df.count()
@@ -79,12 +82,25 @@ def process_table(spark, table_name: str):
           f"{valid_count} Silver, {quarantine_count} quarantaine "
           f"(total vérifié : {valid_count + quarantine_count == total})")
 
+    # Porte bloquante : une ligne perdue ou dupliquée = pipeline cassé, on ne publie rien.
+    if valid_count + quarantine_count != total:
+        raise RuntimeError(
+            f"Réconciliation échouée pour {table_name} : "
+            f"{valid_count} + {quarantine_count} != {total}")
+
+    # Alerte non bloquante : beaucoup de lignes rejetées = la SOURCE est mauvaise,
+    # pas le pipeline.
+    rate = quarantine_count / total if total else 0.0
+    if rate > QUARANTINE_WARN_RATE:
+        print(f"ALERTE QUALITÉ : {table_name} a {rate:.1%} de lignes en quarantaine "
+              f"(seuil {QUARANTINE_WARN_RATE:.0%})")
+
     df_valid.write.format("delta").mode("overwrite").save(f"s3a://silver/{table_name}/")
     df_quarantine.write.format("delta").mode("overwrite").save(f"s3a://quarantine/{table_name}/")
 
 
 def main():
-    ensure_buckets_exist(["silver", "quarantine", "gold"])
+    ensure_buckets_exist(["silver", "quarantine"])
     spark = get_spark_session("silver-quarantine")
     for table_name in DATA_QUALITY_RULES:
         process_table(spark, table_name)

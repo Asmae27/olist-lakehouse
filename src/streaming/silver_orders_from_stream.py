@@ -66,6 +66,8 @@ def main():
     print(f"Flux Bronze : {n_bronze} lignes, {n_dedup} après déduplication")
     print(f"Flux : {n_valid} valides, {n_quarantine} en quarantaine "
           f"(total vérifié : {n_valid + n_quarantine == n_dedup})")
+    if n_valid + n_quarantine != n_dedup:
+        raise RuntimeError(f"Réconciliation du flux échouée : {n_valid} + {n_quarantine} != {n_dedup}")
 
     # 4) Quarantaine recalculée à chaque exécution (fonction de tout le Bronze flux).
     (df_quarantine.write.format("delta").mode("overwrite")
@@ -83,9 +85,15 @@ def main():
     """)
     print(f"MERGE : {result.collect()[0].asDict()}")
 
-    after = spark.read.format("delta").load(SILVER)
-    print(f"Silver orders : {before} -> {after.count()} lignes "
-          f"({after.select('order_id').distinct().count()} order_id distincts)")
+    after_df = spark.read.format("delta").load(SILVER)
+    after_count = after_df.count()
+    after_distinct = after_df.select("order_id").distinct().count()
+    print(f"Silver orders : {before} -> {after_count} lignes ({after_distinct} order_id distincts)")
+
+    if after_count != after_distinct:
+        raise RuntimeError("Doublons sur order_id dans silver/orders après le MERGE")
+    if after_count < before:
+        raise RuntimeError(f"silver/orders a perdu des lignes pendant le MERGE ({before} -> {after_count})")
     spark.stop()
 
 
