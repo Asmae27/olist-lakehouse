@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src"]
+extend-exclude = ["airflow/logs", "notebooks"]
+
+[tool.ruff.lint]
+# E/W : pycodestyle, F : pyflakes, I : tri des imports, B : bugs probables (bugbear)
+select = ["E", "W", "F", "I", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["batch", "common", "producer", "streaming"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
