@@ -1,6 +1,7 @@
 # src/batch/validate_orders.py
-from common.spark_session import get_spark_session
 from great_expectations.dataset import SparkDFDataset
+
+from common.spark_session import get_spark_session
 
 spark = get_spark_session("validate-orders")
 

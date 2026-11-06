@@ -1,7 +1,8 @@
-import datetime
+from pyspark.sql import Window
+from pyspark.sql import functions as F
 
 from common.spark_session import get_spark_session
-from pyspark.sql import functions as F, Window
+from common.storage import ensure_buckets_exist
 
 
 def read(spark, layer, table):
@@ -22,8 +23,9 @@ def add_surrogate_key(df, natural_key, key_name):
 def build_dim_customers(spark):
     df = (
         read(spark, "silver", "customers")
-        .select("customer_id", "customer_unique_id", "customer_zip_code_prefix",
-                "customer_city", "customer_state")
+        .select(
+            "customer_id", "customer_unique_id", "customer_zip_code_prefix", "customer_city", "customer_state"
+        )
         .dropDuplicates(["customer_id"])
     )
     return add_surrogate_key(df, "customer_id", "customer_key")
@@ -35,9 +37,16 @@ def build_dim_products(spark):
         read(spark, "silver", "products")
         .dropDuplicates(["product_id"])
         .join(translation, "product_category_name", "left")
-        .select("product_id", "product_category_name", "product_category_name_english",
-                "product_weight_g", "product_length_cm", "product_height_cm",
-                "product_width_cm", "product_photos_qty")
+        .select(
+            "product_id",
+            "product_category_name",
+            "product_category_name_english",
+            "product_weight_g",
+            "product_length_cm",
+            "product_height_cm",
+            "product_width_cm",
+            "product_photos_qty",
+        )
     )
     return add_surrogate_key(df, "product_id", "product_key")
 
@@ -56,15 +65,18 @@ def build_dim_date(spark):
     les données réelles (pas une plage arbitraire)."""
     bounds = (
         read(spark, "silver", "orders")
-        .select(F.min(F.to_date("order_purchase_timestamp")).alias("d0"),
-                F.max(F.to_date("order_purchase_timestamp")).alias("d1"))
+        .select(
+            F.min(F.to_date("order_purchase_timestamp")).alias("d0"),
+            F.max(F.to_date("order_purchase_timestamp")).alias("d1"),
+        )
         .first()
     )
     print(f"Plage de dates des commandes : {bounds['d0']} -> {bounds['d1']}")
 
     days = spark.range(1).select(
-        F.explode(F.sequence(F.lit(bounds["d0"]), F.lit(bounds["d1"]),
-                             F.expr("interval 1 day"))).alias("full_date")
+        F.explode(F.sequence(F.lit(bounds["d0"]), F.lit(bounds["d1"]), F.expr("interval 1 day"))).alias(
+            "full_date"
+        )
     )
     return days.select(
         F.date_format("full_date", "yyyyMMdd").cast("int").alias("date_key"),
@@ -82,7 +94,8 @@ def build_dim_date(spark):
 def build_fact_order_items(spark):
     items = read(spark, "silver", "order_items")
     orders = read(spark, "silver", "orders").select(
-        "order_id", "customer_id", "order_status", "order_purchase_timestamp")
+        "order_id", "customer_id", "order_status", "order_purchase_timestamp"
+    )
 
     # Garde-fou de cardinalité : orders doit avoir 1 ligne par order_id,
     # sinon la jointure dupliquerait des lignes de faits.
@@ -97,14 +110,21 @@ def build_fact_order_items(spark):
 
     return (
         items.join(orders, "order_id", "left")
-        .withColumn("purchase_date_key",
-                    F.date_format("order_purchase_timestamp", "yyyyMMdd").cast("int"))
+        .withColumn("purchase_date_key", F.date_format("order_purchase_timestamp", "yyyyMMdd").cast("int"))
         .join(dim_c, "customer_id", "left")
         .join(dim_p, "product_id", "left")
         .join(dim_s, "seller_id", "left")
-        .select("order_id", "order_item_id", "customer_key", "product_key",
-                "seller_key", "purchase_date_key", "order_status",
-                "price", "freight_value")
+        .select(
+            "order_id",
+            "order_item_id",
+            "customer_key",
+            "product_key",
+            "seller_key",
+            "purchase_date_key",
+            "order_status",
+            "price",
+            "freight_value",
+        )
     )
 
 
@@ -113,13 +133,16 @@ def validate(spark):
     fact = read(spark, "gold", "fact_order_items")
     n_fact = fact.count()
     n_src = read(spark, "silver", "order_items").count()
-    print(f"fact_order_items : {n_fact} lignes vs silver/order_items : {n_src} "
-          f"(égalité : {n_fact == n_src})")
+    print(f"fact_order_items : {n_fact} lignes vs silver/order_items : {n_src} (égalité : {n_fact == n_src})")
     if n_fact != n_src:
         problems.append(f"fact_order_items ({n_fact}) != silver/order_items ({n_src})")
 
-    checks = [("customer_key", "dim_customers"), ("product_key", "dim_products"),
-              ("seller_key", "dim_sellers"), ("purchase_date_key", "dim_date")]
+    checks = [
+        ("customer_key", "dim_customers"),
+        ("product_key", "dim_products"),
+        ("seller_key", "dim_sellers"),
+        ("purchase_date_key", "dim_date"),
+    ]
     for key, dim in checks:
         dim_key = "date_key" if dim == "dim_date" else key
         dim_df = read(spark, "gold", dim).select(F.col(dim_key).alias(key))

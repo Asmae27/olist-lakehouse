@@ -1,14 +1,8 @@
-from common.spark_session import get_spark_session
-from pyspark.sql.types import StructType, StructField, StringType
 from pyspark.sql import functions as F
+from pyspark.sql.types import StringType, StructField, StructType
 
-import boto3
-from botocore.client import Config
-from common.storage import ensure_buckets_exist 
-
-
-
-
+from common.spark_session import get_spark_session
+from common.storage import ensure_buckets_exist
 
 TABLES = {
     "olist_orders_dataset.csv": "orders",
@@ -28,27 +22,24 @@ DATA_DIR = "/opt/spark/work-dir/data/raw"
 # Nécessaire uniquement pour order_reviews, dont les champs texte libres
 # (commentaires clients) contiennent des guillemets internes doublés et des
 # retours à la ligne, conformes à la norme CSV mais mal gérés sans ces options.
-ORDER_REVIEWS_SCHEMA = StructType([
-    StructField("review_id", StringType(), True),
-    StructField("order_id", StringType(), True),
-    StructField("review_score", StringType(), True),
-    StructField("review_comment_title", StringType(), True),
-    StructField("review_comment_message", StringType(), True),
-    StructField("review_creation_date", StringType(), True),
-    StructField("review_answer_timestamp", StringType(), True),
-    StructField("_corrupt_record", StringType(), True),
-])
+ORDER_REVIEWS_SCHEMA = StructType(
+    [
+        StructField("review_id", StringType(), True),
+        StructField("order_id", StringType(), True),
+        StructField("review_score", StringType(), True),
+        StructField("review_comment_title", StringType(), True),
+        StructField("review_comment_message", StringType(), True),
+        StructField("review_creation_date", StringType(), True),
+        StructField("review_answer_timestamp", StringType(), True),
+        StructField("_corrupt_record", StringType(), True),
+    ]
+)
 
 
 def ingest_standard_csv(spark, csv_filename: str, table_name: str) -> int:
     """Lit un CSV standard (sans champs texte libre complexes) et l'écrit en
     Delta dans bronze/<table_name>/. Retourne le nombre de lignes écrites."""
-    df = (
-        spark.read
-        .option("header", "true")
-        .option("inferSchema", "true")
-        .csv(f"{DATA_DIR}/{csv_filename}")
-    )
+    df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{DATA_DIR}/{csv_filename}")
     row_count = df.count()
     if row_count == 0:
         raise RuntimeError(f"{csv_filename} : 0 ligne lue, fichier absent ou illisible")
@@ -63,19 +54,19 @@ def ingest_standard_csv(spark, csv_filename: str, table_name: str) -> int:
 # en place en prévision d'une future source de données moins propre
 # (nouveau dataset, flux streaming) plutôt que d'être du code mort.
 
+
 def ingest_order_reviews(spark, csv_filename: str, table_name: str) -> int:
     """Lit order_reviews avec gestion des guillemets internes doublés et des
     retours à la ligne dans les commentaires. Les lignes mal formées sont
     conservées dans quarantine/order_reviews_malformed_csv/ plutôt
     qu'exclues silencieusement."""
     df = (
-        spark.read
-        .option("header", "true")
+        spark.read.option("header", "true")
         .option("mode", "PERMISSIVE")
         .option("columnNameOfCorruptRecord", "_corrupt_record")
         .option("multiLine", "true")
-        .option("quote", "\"")
-        .option("escape", "\"")
+        .option("quote", '"')
+        .option("escape", '"')
         .schema(ORDER_REVIEWS_SCHEMA)
         .csv(f"{DATA_DIR}/{csv_filename}")
     )
@@ -89,8 +80,10 @@ def ingest_order_reviews(spark, csv_filename: str, table_name: str) -> int:
     malformed_count = malformed_df.count()
 
     if malformed_count > 0:
-        print(f"  ATTENTION : {malformed_count} lignes mal formées dans {csv_filename} "
-              f"-> conservées dans quarantine/order_reviews_malformed_csv/")
+        print(
+            f"  ATTENTION : {malformed_count} lignes mal formées dans {csv_filename} "
+            f"-> conservées dans quarantine/order_reviews_malformed_csv/"
+        )
         malformed_df.write.format("delta").mode("overwrite").save(
             "s3a://quarantine/order_reviews_malformed_csv/"
         )

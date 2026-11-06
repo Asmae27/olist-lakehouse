@@ -1,5 +1,6 @@
-from common.spark_session import get_spark_session
 from pyspark.sql import functions as F
+
+from common.spark_session import get_spark_session
 
 BROKER = "kafka:19092"
 TOPIC = "olist_orders"
@@ -8,11 +9,7 @@ spark = get_spark_session("kafka-to-console")
 
 
 def kafka_options(reader):
-    return (
-        reader.format("kafka")
-        .option("kafka.bootstrap.servers", BROKER)
-        .option("subscribe", TOPIC)
-    )
+    return reader.format("kafka").option("kafka.bootstrap.servers", BROKER).option("subscribe", TOPIC)
 
 
 # 1) Contrôle en lecture batch : combien de messages par partition ?
@@ -33,11 +30,10 @@ out = stream_df.select(
 )
 
 query = (
-    out.writeStream
-    .format("console")
-    .option("numRows", 100)        # 20 par défaut : on veut voir les 100 messages
+    out.writeStream.format("console")
+    .option("numRows", 100)  # 20 par défaut : on veut voir les 100 messages
     .option("truncate", "false")
-    .trigger(availableNow=True)    # traite tout ce qui est disponible, puis s'arrête
+    .trigger(availableNow=True)  # traite tout ce qui est disponible, puis s'arrête
     .start()
 )
 query.awaitTermination()

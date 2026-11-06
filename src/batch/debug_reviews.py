@@ -1,22 +1,24 @@
+from pyspark.sql.types import StringType, StructField, StructType
+
 from common.spark_session import get_spark_session
-from pyspark.sql.types import StructType, StructField, StringType
 
 spark = get_spark_session("debug-reviews")
 
-schema = StructType([
-    StructField("review_id", StringType(), True),
-    StructField("order_id", StringType(), True),
-    StructField("review_score", StringType(), True),
-    StructField("review_comment_title", StringType(), True),
-    StructField("review_comment_message", StringType(), True),
-    StructField("review_creation_date", StringType(), True),
-    StructField("review_answer_timestamp", StringType(), True),
-    StructField("_corrupt_record", StringType(), True),
-])
+schema = StructType(
+    [
+        StructField("review_id", StringType(), True),
+        StructField("order_id", StringType(), True),
+        StructField("review_score", StringType(), True),
+        StructField("review_comment_title", StringType(), True),
+        StructField("review_comment_message", StringType(), True),
+        StructField("review_creation_date", StringType(), True),
+        StructField("review_answer_timestamp", StringType(), True),
+        StructField("_corrupt_record", StringType(), True),
+    ]
+)
 
 df = (
-    spark.read
-    .option("header", "true")
+    spark.read.option("header", "true")
     .option("mode", "PERMISSIVE")
     .option("multiLine", "true")
     .schema(schema)

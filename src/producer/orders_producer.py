@@ -6,7 +6,7 @@ import time
 
 from confluent_kafka import Producer
 
-BROKER = "kafka:19092"          # listener INTERNAL : on est dans le réseau Docker
+BROKER = "kafka:19092"  # listener INTERNAL : on est dans le réseau Docker
 TOPIC = "olist_orders"
 CSV_PATH = "/opt/spark/work-dir/data/raw/olist_orders_dataset.csv"
 
@@ -32,19 +32,20 @@ def load_orders(path, skip, limit):
 
 def main():
     parser = argparse.ArgumentParser(description="Rejoue les commandes Olist vers Kafka")
-    parser.add_argument("--limit", type=int, default=100,
-                        help="nombre de commandes à envoyer (0 = toutes)")
-    parser.add_argument("--rate", type=float, default=50.0,
-                        help="messages par seconde (0 = pas de limite)")
-    parser.add_argument("--skip", type=int, default=0,
-                        help="ignore les N premières commandes (rejeu par fenêtres)")
+    parser.add_argument("--limit", type=int, default=100, help="nombre de commandes à envoyer (0 = toutes)")
+    parser.add_argument("--rate", type=float, default=50.0, help="messages par seconde (0 = pas de limite)")
+    parser.add_argument(
+        "--skip", type=int, default=0, help="ignore les N premières commandes (rejeu par fenêtres)"
+    )
     args = parser.parse_args()
 
-    producer = Producer({
-        "bootstrap.servers": BROKER,
-        "client.id": "olist-orders-producer",
-        "enable.idempotence": True,   # pas de doublon si un envoi est retenté
-    })
+    producer = Producer(
+        {
+            "bootstrap.servers": BROKER,
+            "client.id": "olist-orders-producer",
+            "enable.idempotence": True,  # pas de doublon si un envoi est retenté
+        }
+    )
 
     orders = load_orders(CSV_PATH, args.skip, args.limit)
     interval = 1.0 / args.rate if args.rate > 0 else 0
@@ -57,15 +58,14 @@ def main():
             try:
                 producer.produce(TOPIC, key=key, value=value, callback=on_delivery)
                 break
-            except BufferError:        # file d'attente locale pleine
-                producer.poll(1)       # on laisse partir des messages, puis on réessaie
-        producer.poll(0)               # déclenche les callbacks déjà prêts
+            except BufferError:  # file d'attente locale pleine
+                producer.poll(1)  # on laisse partir des messages, puis on réessaie
+        producer.poll(0)  # déclenche les callbacks déjà prêts
         if interval:
             time.sleep(interval)
 
-    remaining = producer.flush(30)     # attend la livraison de tout ce qui reste
-    print(f"Terminé : {stats['ok']} confirmés, {stats['failed']} échecs, "
-          f"{remaining} non livrés")
+    remaining = producer.flush(30)  # attend la livraison de tout ce qui reste
+    print(f"Terminé : {stats['ok']} confirmés, {stats['failed']} échecs, {remaining} non livrés")
     sys.exit(0 if stats["failed"] == 0 and remaining == 0 else 1)
 
 

@@ -1,10 +1,10 @@
 # src/common/spark_session.py
 from pyspark.sql import SparkSession
 
+
 def get_spark_session(app_name: str) -> SparkSession:
     return (
-        SparkSession.builder
-        .appName(app_name)
+        SparkSession.builder.appName(app_name)
         .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
         .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
         .config("spark.hadoop.fs.s3a.secret.key", "minioadmin123")

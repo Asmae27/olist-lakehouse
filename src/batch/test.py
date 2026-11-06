@@ -1,8 +1,7 @@
 from pyspark.sql import SparkSession
 
 spark = (
-    SparkSession.builder
-    .appName("check-bronze")
+    SparkSession.builder.appName("check-bronze")
     .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
     .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
     .config("spark.hadoop.fs.s3a.secret.key", "minioadmin123")

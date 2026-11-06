@@ -1,8 +1,6 @@
-import boto3
-from botocore.client import Config
+from pyspark.sql import functions as F
 
 from common.spark_session import get_spark_session
-from pyspark.sql import functions as F
 from common.storage import ensure_buckets_exist
 
 # Chaque règle est une fonction (lambda), pas une expression déjà construite.
@@ -34,8 +32,6 @@ DATA_QUALITY_RULES = {
 }
 
 
-
-
 def split_valid_and_quarantine(df, table_name: str, extra_rules=None):
     """Source unique de vérité : applique chaque règle nommée, construit
     is_valid et quarantine_reason à partir des MÊMES conditions utilisées
@@ -48,13 +44,10 @@ def split_valid_and_quarantine(df, table_name: str, extra_rules=None):
         condition = condition_fn()  # construite ici seulement, session déjà active
         flag_col = f"_fails_{rule_name}"
         df_checked = df_checked.withColumn(flag_col, ~condition)
-        failure_reasons.append(
-            F.when(F.col(flag_col), F.lit(rule_name))
-        )
+        failure_reasons.append(F.when(F.col(flag_col), F.lit(rule_name)))
 
     df_checked = df_checked.withColumn(
-        "quarantine_reason",
-        F.array_except(F.array(*failure_reasons), F.array(F.lit(None).cast("string")))
+        "quarantine_reason", F.array_except(F.array(*failure_reasons), F.array(F.lit(None).cast("string")))
     )
     df_checked = df_checked.withColumn("is_valid", F.size("quarantine_reason") == 0)
 
@@ -67,7 +60,7 @@ def split_valid_and_quarantine(df, table_name: str, extra_rules=None):
     return df_valid, df_quarantine
 
 
-QUARANTINE_WARN_RATE = 0.05   # au-dessus : alerte dans les logs, sans faire échouer le job
+QUARANTINE_WARN_RATE = 0.05  # au-dessus : alerte dans les logs, sans faire échouer le job
 
 
 def process_table(spark, table_name: str):
@@ -78,22 +71,26 @@ def process_table(spark, table_name: str):
     valid_count = df_valid.count()
     quarantine_count = df_quarantine.count()
 
-    print(f"{table_name} : {total} lignes Bronze -> "
-          f"{valid_count} Silver, {quarantine_count} quarantaine "
-          f"(total vérifié : {valid_count + quarantine_count == total})")
+    print(
+        f"{table_name} : {total} lignes Bronze -> "
+        f"{valid_count} Silver, {quarantine_count} quarantaine "
+        f"(total vérifié : {valid_count + quarantine_count == total})"
+    )
 
     # Porte bloquante : une ligne perdue ou dupliquée = pipeline cassé, on ne publie rien.
     if valid_count + quarantine_count != total:
         raise RuntimeError(
-            f"Réconciliation échouée pour {table_name} : "
-            f"{valid_count} + {quarantine_count} != {total}")
+            f"Réconciliation échouée pour {table_name} : {valid_count} + {quarantine_count} != {total}"
+        )
 
     # Alerte non bloquante : beaucoup de lignes rejetées = la SOURCE est mauvaise,
     # pas le pipeline.
     rate = quarantine_count / total if total else 0.0
     if rate > QUARANTINE_WARN_RATE:
-        print(f"ALERTE QUALITÉ : {table_name} a {rate:.1%} de lignes en quarantaine "
-              f"(seuil {QUARANTINE_WARN_RATE:.0%})")
+        print(
+            f"ALERTE QUALITÉ : {table_name} a {rate:.1%} de lignes en quarantaine "
+            f"(seuil {QUARANTINE_WARN_RATE:.0%})"
+        )
 
     df_valid.write.format("delta").mode("overwrite").save(f"s3a://silver/{table_name}/")
     df_quarantine.write.format("delta").mode("overwrite").save(f"s3a://quarantine/{table_name}/")
