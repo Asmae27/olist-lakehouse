@@ -7,3 +7,4 @@ __pycache__/
 docker/spark/jars/*.jar
 airflow/logs/
 airflow/.env
+airflow/config/
