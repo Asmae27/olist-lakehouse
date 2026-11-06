@@ -25,4 +25,3 @@ def ensure_buckets_exist(bucket_names):
             # Un autre job l'a créé entre-temps : ce n'est pas une erreur.
             if e.response["Error"]["Code"] not in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
                 raise
-            
