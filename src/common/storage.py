@@ -2,13 +2,15 @@ import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
 
+from common.config import get_env, get_minio_endpoint
+
 
 def ensure_buckets_exist(bucket_names):
     s3 = boto3.client(
         "s3",
-        endpoint_url="http://minio:9000",
-        aws_access_key_id="minioadmin",
-        aws_secret_access_key="minioadmin123",
+        endpoint_url=get_minio_endpoint(),
+        aws_access_key_id=get_env("MINIO_ROOT_USER"),
+        aws_secret_access_key=get_env("MINIO_ROOT_PASSWORD"),
         config=Config(signature_version="s3v4"),
         region_name="us-east-1",
     )
@@ -23,3 +25,4 @@ def ensure_buckets_exist(bucket_names):
             # Un autre job l'a créé entre-temps : ce n'est pas une erreur.
             if e.response["Error"]["Code"] not in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
                 raise
+            
