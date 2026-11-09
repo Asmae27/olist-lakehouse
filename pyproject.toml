@@ -8,6 +8,10 @@ extend-exclude = ["airflow/logs", "notebooks"]
 # E/W : pycodestyle, F : pyflakes, I : tri des imports, B : bugs probables (bugbear)
 select = ["E", "W", "F", "I", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+# Notebook Databricks : `dbutils`, `display` et `spark` sont fournis par la plateforme.
+"databricks/*.py" = ["F821", "E402"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["batch", "common", "producer", "streaming"]
 

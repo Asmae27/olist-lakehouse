@@ -1,7 +1,6 @@
 from pyspark.sql import functions as F
 
-from common.spark_session import get_spark_session
-from common.storage import ensure_buckets_exist
+from common.lake import ensure_layers, get_spark, read_table, stop_spark, write_table
 
 # Chaque règle est une fonction (lambda), pas une expression déjà construite.
 # Elle n'est évaluée qu'une fois appelée, donc après que la SparkSession existe.
@@ -64,7 +63,7 @@ QUARANTINE_WARN_RATE = 0.05  # au-dessus : alerte dans les logs, sans faire éch
 
 
 def process_table(spark, table_name: str):
-    df = spark.read.format("delta").load(f"s3a://bronze/{table_name}/")
+    df = read_table(spark, "bronze", table_name)
     total = df.count()
 
     df_valid, df_quarantine = split_valid_and_quarantine(df, table_name)
@@ -92,16 +91,16 @@ def process_table(spark, table_name: str):
             f"(seuil {QUARANTINE_WARN_RATE:.0%})"
         )
 
-    df_valid.write.format("delta").mode("overwrite").save(f"s3a://silver/{table_name}/")
-    df_quarantine.write.format("delta").mode("overwrite").save(f"s3a://quarantine/{table_name}/")
+    write_table(df_valid, "silver", table_name)
+    write_table(df_quarantine, "quarantine", table_name)
 
 
 def main():
-    ensure_buckets_exist(["silver", "quarantine"])
-    spark = get_spark_session("silver-quarantine")
+    ensure_layers(["silver", "quarantine"])
+    spark = get_spark("silver-quarantine")
     for table_name in DATA_QUALITY_RULES:
         process_table(spark, table_name)
-    spark.stop()
+    stop_spark(spark)
 
 
 if __name__ == "__main__":

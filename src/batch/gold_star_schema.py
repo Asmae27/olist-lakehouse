@@ -1,16 +1,11 @@
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
-from common.spark_session import get_spark_session
-from common.storage import ensure_buckets_exist
-
-
-def read(spark, layer, table):
-    return spark.read.format("delta").load(f"s3a://{layer}/{table}/")
+from common.lake import ensure_layers, get_spark, read_table, stop_spark, write_table
 
 
 def write_gold(df, name):
-    df.write.format("delta").mode("overwrite").save(f"s3a://gold/{name}/")
+    write_table(df, "gold", name)
 
 
 def add_surrogate_key(df, natural_key, key_name):
@@ -22,7 +17,7 @@ def add_surrogate_key(df, natural_key, key_name):
 
 def build_dim_customers(spark):
     df = (
-        read(spark, "silver", "customers")
+        read_table(spark, "silver", "customers")
         .select(
             "customer_id", "customer_unique_id", "customer_zip_code_prefix", "customer_city", "customer_state"
         )
@@ -32,9 +27,9 @@ def build_dim_customers(spark):
 
 
 def build_dim_products(spark):
-    translation = read(spark, "bronze", "product_category_translation")
+    translation = read_table(spark, "bronze", "product_category_translation")
     df = (
-        read(spark, "silver", "products")
+        read_table(spark, "silver", "products")
         .dropDuplicates(["product_id"])
         .join(translation, "product_category_name", "left")
         .select(
@@ -53,7 +48,7 @@ def build_dim_products(spark):
 
 def build_dim_sellers(spark):
     df = (
-        read(spark, "silver", "sellers")
+        read_table(spark, "silver", "sellers")
         .select("seller_id", "seller_zip_code_prefix", "seller_city", "seller_state")
         .dropDuplicates(["seller_id"])
     )
@@ -64,7 +59,7 @@ def build_dim_date(spark):
     """Dimension entièrement dérivée : une ligne par jour, bornes lues dans
     les données réelles (pas une plage arbitraire)."""
     bounds = (
-        read(spark, "silver", "orders")
+        read_table(spark, "silver", "orders")
         .select(
             F.min(F.to_date("order_purchase_timestamp")).alias("d0"),
             F.max(F.to_date("order_purchase_timestamp")).alias("d1"),
@@ -92,8 +87,8 @@ def build_dim_date(spark):
 
 
 def build_fact_order_items(spark):
-    items = read(spark, "silver", "order_items")
-    orders = read(spark, "silver", "orders").select(
+    items = read_table(spark, "silver", "order_items")
+    orders = read_table(spark, "silver", "orders").select(
         "order_id", "customer_id", "order_status", "order_purchase_timestamp"
     )
 
@@ -104,9 +99,9 @@ def build_fact_order_items(spark):
 
     # On relit les dimensions PERSISTÉES : les clés de la fact sont ainsi
     # garanties identiques à celles stockées dans gold/.
-    dim_c = read(spark, "gold", "dim_customers").select("customer_key", "customer_id")
-    dim_p = read(spark, "gold", "dim_products").select("product_key", "product_id")
-    dim_s = read(spark, "gold", "dim_sellers").select("seller_key", "seller_id")
+    dim_c = read_table(spark, "gold", "dim_customers").select("customer_key", "customer_id")
+    dim_p = read_table(spark, "gold", "dim_products").select("product_key", "product_id")
+    dim_s = read_table(spark, "gold", "dim_sellers").select("seller_key", "seller_id")
 
     return (
         items.join(orders, "order_id", "left")
@@ -130,9 +125,9 @@ def build_fact_order_items(spark):
 
 def validate(spark):
     problems = []
-    fact = read(spark, "gold", "fact_order_items")
+    fact = read_table(spark, "gold", "fact_order_items")
     n_fact = fact.count()
-    n_src = read(spark, "silver", "order_items").count()
+    n_src = read_table(spark, "silver", "order_items").count()
     print(f"fact_order_items : {n_fact} lignes vs silver/order_items : {n_src} (égalité : {n_fact == n_src})")
     if n_fact != n_src:
         problems.append(f"fact_order_items ({n_fact}) != silver/order_items ({n_src})")
@@ -145,7 +140,7 @@ def validate(spark):
     ]
     for key, dim in checks:
         dim_key = "date_key" if dim == "dim_date" else key
-        dim_df = read(spark, "gold", dim).select(F.col(dim_key).alias(key))
+        dim_df = read_table(spark, "gold", dim).select(F.col(dim_key).alias(key))
         orphans = fact.join(dim_df, key, "left_anti").count()
         print(f"Orphelins {key} -> {dim} : {orphans}")
         if orphans:
@@ -156,15 +151,15 @@ def validate(spark):
 
 
 def main():
-    ensure_buckets_exist(["gold"])
-    spark = get_spark_session("gold-star-schema")
+    ensure_layers(["gold"])
+    spark = get_spark("gold-star-schema")
     write_gold(build_dim_customers(spark), "dim_customers")
     write_gold(build_dim_products(spark), "dim_products")
     write_gold(build_dim_sellers(spark), "dim_sellers")
     write_gold(build_dim_date(spark), "dim_date")
     write_gold(build_fact_order_items(spark), "fact_order_items")
     validate(spark)
-    spark.stop()
+    stop_spark(spark)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,7 @@
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType, StructField, StructType
 
-from common.spark_session import get_spark_session
-from common.storage import ensure_buckets_exist
+from common.lake import ensure_layers, get_spark, raw_dir, stop_spark, write_table
 
 TABLES = {
     "olist_orders_dataset.csv": "orders",
@@ -15,8 +14,6 @@ TABLES = {
     "olist_geolocation_dataset.csv": "geolocation",
     "product_category_name_translation.csv": "product_category_translation",
 }
-
-DATA_DIR = "/opt/spark/work-dir/data/raw"
 
 # Schéma explicite requis pour capturer les lignes corrompues via _corrupt_record.
 # Nécessaire uniquement pour order_reviews, dont les champs texte libres
@@ -39,11 +36,11 @@ ORDER_REVIEWS_SCHEMA = StructType(
 def ingest_standard_csv(spark, csv_filename: str, table_name: str) -> int:
     """Lit un CSV standard (sans champs texte libre complexes) et l'écrit en
     Delta dans bronze/<table_name>/. Retourne le nombre de lignes écrites."""
-    df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{DATA_DIR}/{csv_filename}")
+    df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{raw_dir()}/{csv_filename}")
     row_count = df.count()
     if row_count == 0:
         raise RuntimeError(f"{csv_filename} : 0 ligne lue, fichier absent ou illisible")
-    df.write.format("delta").mode("overwrite").save(f"s3a://bronze/{table_name}/")
+    write_table(df, "bronze", table_name)
     return row_count
 
 
@@ -68,7 +65,7 @@ def ingest_order_reviews(spark, csv_filename: str, table_name: str) -> int:
         .option("quote", '"')
         .option("escape", '"')
         .schema(ORDER_REVIEWS_SCHEMA)
-        .csv(f"{DATA_DIR}/{csv_filename}")
+        .csv(f"{raw_dir()}/{csv_filename}")
     )
 
     malformed_df = (
@@ -84,21 +81,19 @@ def ingest_order_reviews(spark, csv_filename: str, table_name: str) -> int:
             f"  ATTENTION : {malformed_count} lignes mal formées dans {csv_filename} "
             f"-> conservées dans quarantine/order_reviews_malformed_csv/"
         )
-        malformed_df.write.format("delta").mode("overwrite").save(
-            "s3a://quarantine/order_reviews_malformed_csv/"
-        )
+        write_table(malformed_df, "quarantine", "order_reviews_malformed_csv")
 
     clean_df = df.filter(df["_corrupt_record"].isNull()).drop("_corrupt_record")
     row_count = clean_df.count()
     if row_count == 0:
         raise RuntimeError(f"{csv_filename} : 0 ligne lue, fichier absent ou illisible")
-    clean_df.write.format("delta").mode("overwrite").save(f"s3a://bronze/{table_name}/")
+    write_table(clean_df, "bronze", table_name)
     return row_count
 
 
 def main():
-    ensure_buckets_exist(["bronze", "quarantine"])
-    spark = get_spark_session("bronze-ingest")
+    ensure_layers(["bronze", "quarantine"])
+    spark = get_spark("bronze-ingest")
 
     for csv_filename, table_name in TABLES.items():
         print(f"Ingestion : {csv_filename} -> bronze/{table_name}/")
@@ -110,7 +105,7 @@ def main():
 
         print(f"  {count} lignes écrites dans bronze/{table_name}/")
 
-    spark.stop()
+    stop_spark(spark)
 
 
 if __name__ == "__main__":
