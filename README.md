@@ -4,39 +4,77 @@
 
 Projet de portfolio en Data Engineering : architecture lakehouse (médaillon) construite autour du dataset public Olist (e-commerce brésilien), avec ingestion batch et streaming, contrôles qualité (quarantaine et portes bloquantes), modèle en étoile Kimball, orchestration Airflow, intégration continue GitHub Actions et portage de la partie batch sur Databricks.
 
-**État au 09/11/2026** : le pipeline complet est orchestré par Airflow et s'exécute de bout en bout en local : ingestion batch des CSV et ingestion en streaming depuis Kafka (en parallèle), Silver avec quarantaine, upsert du flux dans Silver, puis Gold en étoile. Une CI (lint + tests unitaires) vérifie chaque push, et les secrets ne sont plus dans le code. La partie batch a aussi été portée sur Databricks Free Edition avec le même code métier : les chiffres de contrôle sont identiques (voir [Batch sur Databricks](#batch-sur-databricks-free-edition)). Il reste à planifier le DAG et à produire le schéma d'architecture final (voir [Avancement](#avancement)).
+**État au 09/11/2026** : le pipeline complet est orchestré par Airflow et s'exécute de bout en bout en local : ingestion batch des CSV et ingestion en streaming depuis Kafka (en parallèle), Silver avec quarantaine, upsert du flux dans Silver, puis Gold en étoile. Une CI (lint + tests unitaires) vérifie chaque push, et les secrets ne sont plus dans le code. La partie batch a aussi été portée sur Databricks Free Edition avec le même code métier : les chiffres de contrôle sont identiques (voir [Batch sur Databricks](#batch-sur-databricks-free-edition)). Il reste à planifier le DAG et à brancher une alerte externe sur le taux de quarantaine (voir [Avancement](#avancement)).
 
 ## Architecture
 
-Cible :
+### Vue d'ensemble
 
+```mermaid
+flowchart LR
+    subgraph SRC["Sources"]
+        CSV[("9 CSV Olist")]
+        PROD["Producer Python<br/>confluent-kafka<br/>clé = order_id"]
+    end
+
+    subgraph LOCAL["Local : Docker Compose sur WSL2"]
+        KAFKA["Kafka KRaft<br/>topic olist_orders<br/>3 partitions"]
+        STREAM["Spark Structured Streaming<br/>availableNow + checkpoint"]
+        AF{{"Airflow<br/>DAG olist_pipeline<br/>LocalExecutor"}}
+        subgraph MINIO["MinIO (S3) : tables Delta"]
+            BRZ[("Bronze batch<br/>9 tables")]
+            BRZS[("Bronze flux<br/>orders_stream")]
+            SLV[("Silver<br/>6 tables")]
+            QRT[("Quarantaine<br/>avec quarantine_reason")]
+            GLD[("Gold<br/>étoile Kimball")]
+        end
+    end
+
+    subgraph DBX["Databricks Free Edition : serverless + Unity Catalog"]
+        VOL[("Volume<br/>raw.olist")]
+        NB["Notebook<br/>run_batch.py"]
+        UC[("Tables workspace<br/>bronze, silver, gold, quarantine")]
+    end
+
+    subgraph DEV["Développement"]
+        GH["GitHub : olist-lakehouse<br/>src/batch + common/lake.py<br/>un seul code, deux backends"]
+        CI["GitHub Actions<br/>ruff + 60 tests"]
+    end
+
+    CSV -->|"bronze_ingest"| BRZ
+    PROD --> KAFKA --> STREAM -->|"stream_to_bronze"| BRZS
+    BRZ -->|"silver_quarantine"| SLV
+    BRZ -->|"lignes rejetées"| QRT
+    BRZS -->|"MERGE sur order_id"| SLV
+    SLV -->|"gold_star_schema"| GLD
+
+    AF -.->|"orchestre les jobs Spark"| MINIO
+    AF -.-> STREAM
+
+    CSV -->|"téléversement"| VOL
+    VOL --> NB --> UC
+
+    GH --> CI
+    GH -->|"git clone"| LOCAL
+    GH -->|"Git folder"| NB
+
+    classDef store fill:#dbeafe,stroke:#1d4ed8,color:#111827
+    classDef job fill:#dcfce7,stroke:#15803d,color:#111827
+    classDef orch fill:#fef3c7,stroke:#b45309,color:#111827
+    classDef dev fill:#f3e8ff,stroke:#7e22ce,color:#111827
+    class BRZ,BRZS,SLV,QRT,GLD,UC,VOL,CSV store
+    class KAFKA,STREAM,PROD,NB job
+    class AF orch
+    class GH,CI dev
 ```
-Producer Python (rejoue les commandes Olist)
-  -> Kafka
-  -> Spark Structured Streaming
-  -> Delta Lake sur MinIO (S3)
-       Bronze (brut)
-       -> Silver (nettoyé + règles qualité) + Quarantaine
-       -> Gold (modèle en étoile Kimball)
-  -> orchestration Airflow, CI GitHub Actions, le tout en Docker Compose
-```
 
-Réalisé à ce jour :
+**Lecture du schéma**
 
-```
-Branche batch
-  CSV Olist (9 fichiers) -> Spark -> Bronze (9 tables Delta)
-                                  -> Silver + Quarantaine (lignes rejetées, avec raison)
-
-Branche streaming
-  Producer (confluent-kafka, clé = order_id)
-    -> Kafka (topic olist_orders, 3 partitions)
-    -> Spark Structured Streaming (checkpoint dans MinIO)
-    -> bronze/orders_stream (Delta, exactement une fois)
-    -> upsert (MERGE sur order_id) dans silver/orders
-
-Les deux branches convergent vers Gold (4 dimensions + 1 table de faits).
-```
+- **Flèches pleines** : circulation des données. **Flèches pointillées** : orchestration (Airflow déclenche les jobs Spark par `docker exec`).
+- **Branche batch** : les 9 CSV passent par Bronze, puis Silver (avec quarantaine), puis Gold. Elle s'exécute en local **et** sur Databricks, avec le même code.
+- **Branche streaming** : producer, Kafka (clé = `order_id`, 3 partitions), Structured Streaming (checkpoint, exactement une fois), puis `MERGE` dans Silver. Elle reste **uniquement en local** : Databricks Free Edition ne peut ni installer le connecteur Kafka ni joindre un Kafka local.
+- **Portes qualité** (bloquantes) : `silver + quarantaine = bronze` après Silver, puis égalité des lignes de la table de faits et absence de clé orpheline après Gold. Une ligne en quarantaine n'est pas un échec : elle signale un problème de source.
+- **Développement** : chaque push déclenche la CI (lint et tests unitaires). Le même dépôt est cloné en local et lu par le Git folder de Databricks.
 
 ### Deux plateformes, un seul code batch
 
@@ -589,4 +627,4 @@ Non comparable au tableau local ci-dessus (session Spark partagée, calcul manag
 - [x] Secrets déplacés vers des variables d'environnement (`.env`, `.env.example`)
 - [x] Portage du batch sur Databricks Free Edition (couche `lake.py`, notebook `run_batch.py`, chiffres identiques au local)
 - [ ] Planification du DAG et alerte externe sur le taux de quarantaine
-- [ ] Schéma d'architecture final
+- [x] Schéma d'architecture final (Mermaid, section [Architecture](#architecture))
