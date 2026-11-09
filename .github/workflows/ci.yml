@@ -54,3 +54,16 @@ jobs:
         with:
           name: coverage-report
           path: htmlcov/
+      - name: SonarCloud Analysis
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=asmae27
+            -Dsonar.projectKey=Asmae27_olist-lakehouse
+            -Dsonar.sources=src
+            -Dsonar.tests=tests
+            -Dsonar.python.version=3.12
+            -Dsonar.python.coverage.reportPaths=coverage.xml
