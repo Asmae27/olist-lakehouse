@@ -41,4 +41,16 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - run: pytest -v
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=src \
+                --cov-branch \
+                --cov-report=term-missing \
+                --cov-report=xml \
+                --cov-report=html
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/

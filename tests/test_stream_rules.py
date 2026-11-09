@@ -41,3 +41,25 @@ def test_unparseable_date_is_quarantined(spark):
 
 def test_one_malformed_rule_per_date_column():
     assert len({malformed_rule(c)[0] for c in DATE_COLS}) == len(DATE_COLS)
+
+
+def test_valid_date_is_not_quarantined(spark):
+    valid, quarantine = _split(_typed(spark, "2018-01-02 14:30:00"))
+
+    assert valid.count() == 1
+    assert quarantine.count() == 0
+
+
+def test_whitespace_date_is_legitimately_absent(spark):
+    valid, quarantine = _split(_typed(spark, "   "))
+
+    assert valid.count() == 1
+    assert quarantine.count() == 0
+
+
+def test_malformed_rule_has_expected_name():
+    for col_name in DATE_COLS:
+        rule_name, condition_fn = malformed_rule(col_name)
+
+        assert rule_name == f"{col_name}_malformed"
+        assert callable(condition_fn)
