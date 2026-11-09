@@ -2,4 +2,4 @@
 pyspark==3.5.9      # même version que le cluster : les règles qualité sont testées sur le vrai moteur
 pytest==8.4.2
 ruff==0.17.3
-pytest-cov=7.1.0
+pytest-cov==7.1.0

@@ -1,4 +1,3 @@
-
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,9 +12,7 @@ def mock_s3(monkeypatch):
     s3 = MagicMock()
 
     monkeypatch.setattr(storage.boto3, "client", MagicMock(return_value=s3))
-    monkeypatch.setattr(
-        storage, "get_minio_endpoint", lambda: "http://localhost:9000"
-    )
+    monkeypatch.setattr(storage, "get_minio_endpoint", lambda: "http://localhost:9000")
     monkeypatch.setattr(
         storage,
         "get_env",
@@ -29,9 +26,7 @@ def mock_s3(monkeypatch):
 
 
 def test_ensure_buckets_exist_when_all_buckets_exist(mock_s3):
-    mock_s3.list_buckets.return_value = {
-        "Buckets": [{"Name": "bronze"}, {"Name": "silver"}]
-    }
+    mock_s3.list_buckets.return_value = {"Buckets": [{"Name": "bronze"}, {"Name": "silver"}]}
 
     storage.ensure_buckets_exist(["bronze", "silver"])
 
@@ -39,9 +34,7 @@ def test_ensure_buckets_exist_when_all_buckets_exist(mock_s3):
 
 
 def test_ensure_buckets_exist_creates_missing_bucket(mock_s3):
-    mock_s3.list_buckets.return_value = {
-        "Buckets": [{"Name": "bronze"}]
-    }
+    mock_s3.list_buckets.return_value = {"Buckets": [{"Name": "bronze"}]}
 
     storage.ensure_buckets_exist(["bronze", "silver"])
 
@@ -49,9 +42,7 @@ def test_ensure_buckets_exist_creates_missing_bucket(mock_s3):
 
 
 def test_ensure_buckets_exist_creates_multiple_missing_buckets(mock_s3):
-    mock_s3.list_buckets.return_value = {
-        "Buckets": [{"Name": "bronze"}]
-    }
+    mock_s3.list_buckets.return_value = {"Buckets": [{"Name": "bronze"}]}
 
     storage.ensure_buckets_exist(["bronze", "silver", "gold"])
 
@@ -64,9 +55,7 @@ def test_ensure_buckets_exist_creates_multiple_missing_buckets(mock_s3):
     "error_code",
     ["BucketAlreadyOwnedByYou", "BucketAlreadyExists"],
 )
-def test_ensure_buckets_exist_ignores_already_created_bucket(
-    mock_s3, error_code
-):
+def test_ensure_buckets_exist_ignores_already_created_bucket(mock_s3, error_code):
     mock_s3.list_buckets.return_value = {"Buckets": []}
 
     mock_s3.create_bucket.side_effect = ClientError(

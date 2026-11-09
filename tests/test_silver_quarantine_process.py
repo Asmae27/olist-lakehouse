@@ -1,11 +1,8 @@
-
 from unittest.mock import MagicMock
 
 import pytest
 
 from batch import silver_quarantine
-
-
 
 
 def create_orders(spark):
@@ -19,9 +16,7 @@ def create_orders(spark):
     )
 
 
-def test_process_table_writes_valid_and_quarantined_rows(
-    spark, monkeypatch
-):
+def test_process_table_writes_valid_and_quarantined_rows(spark, monkeypatch):
     df = create_orders(spark)
     written_tables = []
 
@@ -34,9 +29,7 @@ def test_process_table_writes_valid_and_quarantined_rows(
     monkeypatch.setattr(
         silver_quarantine,
         "write_table",
-        lambda data, layer, table: written_tables.append(
-            (data, layer, table)
-        ),
+        lambda data, layer, table: written_tables.append((data, layer, table)),
     )
 
     silver_quarantine.process_table(spark, "orders")
@@ -54,14 +47,10 @@ def test_process_table_writes_valid_and_quarantined_rows(
     assert valid_df.count() == 1
     assert quarantine_df.count() == 1
 
-    assert quarantine_df.collect()[0]["quarantine_reason"] == [
-        "order_id_not_null"
-    ]
+    assert quarantine_df.collect()[0]["quarantine_reason"] == ["order_id_not_null"]
 
 
-def test_process_table_warns_when_quarantine_rate_exceeds_threshold(
-    spark, monkeypatch, capsys
-):
+def test_process_table_warns_when_quarantine_rate_exceeds_threshold(spark, monkeypatch, capsys):
     df = create_orders(spark)
 
     monkeypatch.setattr(
@@ -84,9 +73,7 @@ def test_process_table_warns_when_quarantine_rate_exceeds_threshold(
     assert "50.0%" in captured.out
 
 
-def test_process_table_does_not_warn_when_table_is_empty(
-    spark, monkeypatch, capsys
-):
+def test_process_table_does_not_warn_when_table_is_empty(spark, monkeypatch, capsys):
     df = spark.createDataFrame(
         [],
         "order_id STRING, order_purchase_timestamp STRING",
@@ -103,9 +90,7 @@ def test_process_table_does_not_warn_when_table_is_empty(
     monkeypatch.setattr(
         silver_quarantine,
         "write_table",
-        lambda data, layer, table: written_tables.append(
-            (data, layer, table)
-        ),
+        lambda data, layer, table: written_tables.append((data, layer, table)),
     )
 
     silver_quarantine.process_table(spark, "orders")
@@ -119,9 +104,7 @@ def test_process_table_does_not_warn_when_table_is_empty(
         assert data.count() == 0
 
 
-def test_process_table_raises_when_reconciliation_fails(
-    spark, monkeypatch
-):
+def test_process_table_raises_when_reconciliation_fails(spark, monkeypatch):
     df = create_orders(spark)
 
     valid_df = df.limit(1)
@@ -162,24 +145,14 @@ def test_main_initializes_and_processes_all_tables(monkeypatch):
     process_table_mock = MagicMock()
     stop_spark_mock = MagicMock()
 
-    monkeypatch.setattr(
-        silver_quarantine, "ensure_layers", ensure_layers_mock
-    )
-    monkeypatch.setattr(
-        silver_quarantine, "get_spark", get_spark_mock
-    )
-    monkeypatch.setattr(
-        silver_quarantine, "process_table", process_table_mock
-    )
-    monkeypatch.setattr(
-        silver_quarantine, "stop_spark", stop_spark_mock
-    )
+    monkeypatch.setattr(silver_quarantine, "ensure_layers", ensure_layers_mock)
+    monkeypatch.setattr(silver_quarantine, "get_spark", get_spark_mock)
+    monkeypatch.setattr(silver_quarantine, "process_table", process_table_mock)
+    monkeypatch.setattr(silver_quarantine, "stop_spark", stop_spark_mock)
 
     silver_quarantine.main()
 
-    ensure_layers_mock.assert_called_once_with(
-        ["silver", "quarantine"]
-    )
+    ensure_layers_mock.assert_called_once_with(["silver", "quarantine"])
 
     get_spark_mock.assert_called_once_with("silver-quarantine")
 
@@ -187,9 +160,7 @@ def test_main_initializes_and_processes_all_tables(monkeypatch):
 
     assert process_table_mock.call_count == len(expected_tables)
 
-    processed_tables = [
-        call.args[1] for call in process_table_mock.call_args_list
-    ]
+    processed_tables = [call.args[1] for call in process_table_mock.call_args_list]
 
     assert processed_tables == expected_tables
 
