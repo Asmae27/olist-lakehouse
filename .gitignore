@@ -10,3 +10,4 @@ airflow/.env
 airflow/config/
 .coverage
 htmlcov/
+coverage.xml
