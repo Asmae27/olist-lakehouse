@@ -19,6 +19,7 @@ def get_minio_endpoint() -> str:
     """Adresse de MinIO : pas un secret, donc une valeur par défaut est acceptable."""
     return os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
 
+
 def get_source_db_settings() -> dict:
     """Paramètres de connexion à PostgreSQL, la base « source » dont on capte les changements.
 
