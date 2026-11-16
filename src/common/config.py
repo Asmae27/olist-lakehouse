@@ -18,3 +18,18 @@ def get_env(name: str) -> str:
 def get_minio_endpoint() -> str:
     """Adresse de MinIO : pas un secret, donc une valeur par défaut est acceptable."""
     return os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
+
+def get_source_db_settings() -> dict:
+    """Paramètres de connexion à PostgreSQL, la base « source » dont on capte les changements.
+
+    Hôte, port et nom de base ne sont pas des secrets : ils gardent un défaut. L'utilisateur
+    et le mot de passe n'en ont pas (voir `get_env`). Les clés du dictionnaire sont celles
+    attendues par `psycopg2.connect(**settings)`.
+    """
+    return {
+        "host": os.environ.get("SOURCE_DB_HOST", "source-db"),
+        "port": int(os.environ.get("SOURCE_DB_PORT", "5432")),
+        "dbname": os.environ.get("SOURCE_DB_NAME", "olist_source"),
+        "user": get_env("SOURCE_DB_USER"),
+        "password": get_env("SOURCE_DB_PASSWORD"),
+    }

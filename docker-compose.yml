@@ -24,11 +24,15 @@ services:
     depends_on:
        minio:
         condition: service_healthy
+       source-db:
+        condition: service_healthy
     environment:
       PATH: /opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       PYTHONPATH: /opt/spark/work-dir/src
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER manquant dans .env}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD manquant dans .env}
+      SOURCE_DB_USER: ${SOURCE_DB_USER:?SOURCE_DB_USER manquant dans .env}
+      SOURCE_DB_PASSWORD: ${SOURCE_DB_PASSWORD:?SOURCE_DB_PASSWORD manquant dans .env}
     volumes:
       - ./docker/spark/jars/hadoop-aws-3.3.4.jar:/opt/spark/jars/hadoop-aws-3.3.4.jar:ro
       - ./docker/spark/jars/aws-java-sdk-bundle-1.12.262.jar:/opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar:ro
@@ -37,6 +41,25 @@ services:
       - ./src:/opt/spark/work-dir/src:ro
       - ./data:/opt/spark/work-dir/data:ro
     command: tail -f /dev/null
+  source-db:
+    image: postgres:16
+    container_name: source-db
+    ports:
+      - "5433:5432"   # 5433 côté machine : évite un conflit avec un PostgreSQL local
+    environment:
+      POSTGRES_USER: ${SOURCE_DB_USER:?SOURCE_DB_USER manquant dans .env}
+      POSTGRES_PASSWORD: ${SOURCE_DB_PASSWORD:?SOURCE_DB_PASSWORD manquant dans .env}
+      POSTGRES_DB: olist_source
+    # wal_level=logical : le journal contient assez d'informations pour reconstruire chaque
+    # changement ligne par ligne (prérequis de Debezium, phase 2).
+    command: ["postgres", "-c", "wal_level=logical"]
+    volumes:
+      - source_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d olist_source"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   kafka:
     image: apache/kafka:4.4.0       
     container_name: kafka
@@ -63,4 +86,4 @@ services:
 volumes:
   minio_data:
   kafka_data:
-
+  source_db_data:
