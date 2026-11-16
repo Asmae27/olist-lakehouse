@@ -13,7 +13,7 @@ select = ["E", "W", "F", "I", "B"]
 "databricks/*.py" = ["F821", "E402"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["batch", "common", "producer", "streaming"]
+known-first-party = ["batch", "common", "producer", "source", "streaming"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
